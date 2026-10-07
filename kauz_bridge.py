@@ -35,7 +35,7 @@ BASE = "https://ai-workplace.kauz.ai"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
 
-STATE = {"cookie": "", "models": [], "toolsets": []}
+STATE = {"cookie": "", "models": [], "toolsets": [], "pool": [], "pool_idx": 0}
 
 MODEL_IDS = [
     "kauz-selection",
@@ -219,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"id": t.get("id"), "name": t.get("name"), "tools": t.get("allowedToolIds", [])}
                 for t in STATE["toolsets"]]})
         elif self.path == "/health":
-            self._send(200, {"ok": bool(STATE["cookie"]), "models": len(STATE["models"] or MODEL_IDS)})
+            self._send(200, {"ok": bool(STATE["cookie"]), "models": len(STATE["models"] or MODEL_IDS), "pool": len(STATE["pool"])})
         else:
             self._send(404, {"error": "not found"})
 
@@ -246,6 +246,7 @@ class Handler(BaseHTTPRequestHandler):
             if fn:
                 tool = fn
 
+        rotate_cookie(force=True)
         try:
             if stream:
                 self.send_response(200)
@@ -263,6 +264,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, json.loads(out[0]))
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="replace")[:500]
+            if e.code in (401, 429):
+                rotate_cookie(force=True)  # burned/rate-limited session -> next in pool
             self._send(e.code, {"error": {"message": body, "type": "upstream_error", "code": e.code}})
         except Exception as e:
             self._send(500, {"error": {"message": str(e), "type": "bridge_error"}})
@@ -283,6 +286,41 @@ def load_session(path):
         STATE["cookie"] = sess["cookie"]
     else:
         raise SystemExit(f"cannot parse session file {path}")
+
+
+def load_pool(pool_path):
+    """Load kauz_accounts.jsonl into STATE['pool'] (list of cookie strings)."""
+    pool = []
+    if not os.path.exists(pool_path):
+        return pool
+    for line in open(pool_path, encoding="utf-8"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            ck = rec.get("cookies") or {}
+            if isinstance(ck, dict) and ck:
+                pool.append("; ".join(f"{k}={v}" for k, v in ck.items()))
+            elif isinstance(ck, str) and ck:
+                pool.append(ck)
+        except Exception:
+            continue
+    STATE["pool"] = pool
+    STATE["pool_idx"] = 0
+    print(f"[kauz] session pool loaded: {len(pool)} accounts from {pool_path}")
+    return pool
+
+
+def rotate_cookie(force=False):
+    """Round-robin across pool; fall back to single STATE cookie."""
+    pool = STATE.get("pool") or []
+    if not pool:
+        return
+    if force or not STATE.get("cookie"):
+        i = STATE.get("pool_idx", 0) % len(pool)
+        STATE["cookie"] = pool[i]
+        STATE["pool_idx"] = i + 1
 
 
 def fetch_catalog():
@@ -327,8 +365,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8310)
     ap.add_argument("--session", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "kauz_session.json"))
+    ap.add_argument("--pool", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "kauz_accounts.jsonl"),
+                    help="jsonl account pool for cookie rotation")
     args = ap.parse_args()
     load_session(args.session)
+    load_pool(args.pool)
+    rotate_cookie(force=True)
     if not STATE["cookie"]:
         raise SystemExit("empty cookie")
     fetch_catalog()
