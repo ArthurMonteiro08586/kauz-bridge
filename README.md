@@ -10,6 +10,7 @@ Free accounts get a full agent stack: routing model (`kauz-selection`), GPT-5.6 
 | File | Purpose |
 |------|---------|
 | `kauz_autoreg.py` | Full-cycle registration: sign-up → IMAP email verify → sign-in → session save |
+| `kauz_farm.py` | Parallel mass-registration (N workers × proxy pool → `kauz_accounts.jsonl`) |
 | `kauz_bridge.py` | OpenAI-compatible bridge (`/v1/chat/completions`, `/v1/models`, `/v1/toolsets`) |
 | `kauz_sshd.py` | Local SSH server (paramiko) — makes YOUR PC visible to the Kauz agent |
 | `kauz_tunnel.py` | Pinggy TCP tunnel manager — exposes the sshd to the internet, saves `kz_tunnel.json` |
@@ -57,6 +58,24 @@ Pitfall: if `~/.cloudflared/config.yml` exists with a named tunnel, it silently 
 CF quick tunnels are **HTTP-only**: they cannot expose the SSH port to the Kauz agent
 (its `ssh_*` tools are raw TCP clients and can't run `cloudflared access` client-side).
 For the PC-exposure hop use pinggy TCP / VPS / router port-forward; use CF only for the bridge.
+
+## Session pool (multi-account rotation)
+
+`kauz_bridge.py` supports a pool of registered accounts with automatic rotation:
+
+```bash
+python kauz_farm.py --total 15 --workers 2 \
+  --imap-user you@gmail.com --imap-pass APPPASS \
+  --proxy-list live_proxy.txt          # appends to kauz_accounts.jsonl
+
+python kauz_bridge.py --port 8310      # auto-loads kauz_accounts.jsonl as pool
+# GET /health -> {"ok": true, "models": 6, "pool": 7}
+```
+
+- Every `/v1/chat/completions` request uses the next session in the pool (round-robin).
+- On upstream `401/429` the burned session is skipped on the next request.
+- Sign-up throttling (`SIGN_UP_THROTTLED`) is per-IP → keep `live_proxy.txt` fresh
+  (the farm shuffles and tries up to 10 proxies per account).
 
 ## Quick start
 
