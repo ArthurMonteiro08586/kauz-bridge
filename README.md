@@ -14,6 +14,7 @@ Free accounts get a full agent stack: routing model (`kauz-selection`), GPT-5.6 
 | `kauz_sshd.py` | Local SSH server (paramiko) — makes YOUR PC visible to the Kauz agent |
 | `kauz_tunnel.py` | Pinggy TCP tunnel manager — exposes the sshd to the internet, saves `kz_tunnel.json` |
 | `test_agent_pc.py` | End-to-end proof: agent calls `ssh_execute_command` → command runs on your PC |
+| `roast_gateway.py` | External stress-test ("прожарка") of the bridge through a Cloudflare tunnel: health, models, non-stream, stream, tool-use, 2nd model |
 
 ## Agent sees your PC (ssh toolset)
 
@@ -39,6 +40,23 @@ Security notes:
 - `kauz_sshd.py` is **exec-only** (no interactive shell), password-auth, every command is logged to `kauz_sshd.log`.
 - Commands run via `cmd.exe` with your user's rights — pick the password accordingly, or run the sshd under a low-privilege account.
 - The pinggy free tunnel dies after 60 min — re-run `kauz_tunnel.py` (or point the agent at a VPS sshd for 24/7).
+
+## Cloudflare tunnel for the bridge (прожарка 6/6 PASS)
+
+The bridge itself is best exposed via a free CF quick tunnel (no 60-min limit, HTTPS, stable):
+
+```bash
+cloudflared tunnel --no-autoupdate --config /path/to/EMPTY.yml --url http://localhost:8310
+# → https://<random>.trycloudflare.com  = your public OpenAI-compatible endpoint
+python roast_gateway.py   # external stress test: 6/6 PASS (health/models/chat/stream/tool-use/haiku)
+```
+
+Pitfall: if `~/.cloudflared/config.yml` exists with a named tunnel, it silently overrides
+`--url` and you get `404` on everything — pass `--config` pointing at an empty `{}` yaml.
+
+CF quick tunnels are **HTTP-only**: they cannot expose the SSH port to the Kauz agent
+(its `ssh_*` tools are raw TCP clients and can't run `cloudflared access` client-side).
+For the PC-exposure hop use pinggy TCP / VPS / router port-forward; use CF only for the bridge.
 
 ## Quick start
 
