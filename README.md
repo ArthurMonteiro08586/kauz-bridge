@@ -11,6 +11,34 @@ Free accounts get a full agent stack: routing model (`kauz-selection`), GPT-5.6 
 |------|---------|
 | `kauz_autoreg.py` | Full-cycle registration: sign-up → IMAP email verify → sign-in → session save |
 | `kauz_bridge.py` | OpenAI-compatible bridge (`/v1/chat/completions`, `/v1/models`, `/v1/toolsets`) |
+| `kauz_sshd.py` | Local SSH server (paramiko) — makes YOUR PC visible to the Kauz agent |
+| `kauz_tunnel.py` | Pinggy TCP tunnel manager — exposes the sshd to the internet, saves `kz_tunnel.json` |
+| `test_agent_pc.py` | End-to-end proof: agent calls `ssh_execute_command` → command runs on your PC |
+
+## Agent sees your PC (ssh toolset)
+
+Kauz ships a server-side `ssh` toolset (`ssh_execute_command`, `ssh_read_file_content`, ...).
+It was "dead" only because there was nothing to connect to. Wire it up:
+
+```bash
+# 1. Start local SSH server (exec-only, password auth, logs every command)
+python kauz_sshd.py --port 2222 --user kauz --password 'YourStrongPass'
+
+# 2. Expose it (free pinggy TCP tunnel, 60 min sessions; or use your own VPS/port-forward)
+python kauz_tunnel.py 2222
+# → TUNNEL UP: <host>:<port> saved to kz_tunnel.json
+
+# 3. Ask the agent (via bridge or chat UI):
+#    "Use ssh_execute_command to run 'whoami' on host <host> port <port> user kauz password ***"
+```
+
+Verified live: agent called the tool with the tunnel creds and got back
+`{"stdout": "Nikita\nNikita\nAGENT-SEES-PC", "exitCode": 0, "success": true}`.
+
+Security notes:
+- `kauz_sshd.py` is **exec-only** (no interactive shell), password-auth, every command is logged to `kauz_sshd.log`.
+- Commands run via `cmd.exe` with your user's rights — pick the password accordingly, or run the sshd under a low-privilege account.
+- The pinggy free tunnel dies after 60 min — re-run `kauz_tunnel.py` (or point the agent at a VPS sshd for 24/7).
 
 ## Quick start
 
