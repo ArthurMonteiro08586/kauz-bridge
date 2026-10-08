@@ -74,7 +74,7 @@ def main():
             txt = open(p, encoding="utf-8", errors="replace").read()
             for pat in [r"ghp_[A-Za-z0-9]{20,}", r"github_pat_[A-Za-z0-9_]{20,}",
                         r"cfut_[A-Za-z0-9_]{20,}", r"\+kz[a-z0-9]{8,}@gmail",
-                        r"udja" + r"hoqg", r"KzPc\d{4}", r"sshpass"]:
+                        r"udja" + r"hoqg", r"KzPc\d{4}", r"ssh" + r"pass"]:
                 hits += re.findall(pat, txt)
         if hits: raise AssertionError(f"secrets leaked: {hits[:3]}")
         return "clean"
