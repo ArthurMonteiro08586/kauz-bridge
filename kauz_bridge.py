@@ -275,6 +275,9 @@ def load_session(path):
     if os.environ.get("KAUZ_COOKIE"):
         STATE["cookie"] = os.environ["KAUZ_COOKIE"]
         return
+    if not os.path.exists(path):
+        # pool-only mode: session file optional (kauz_accounts.jsonl supplies cookies)
+        return
     sess = json.load(open(path))
     if isinstance(sess, dict) and "cookies" in sess:
         ck = sess["cookies"]
