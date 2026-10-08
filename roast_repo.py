@@ -35,9 +35,9 @@ def clone_repo(dst):
     os.makedirs(root, exist_ok=True)
     total = 0
     for f in files:
-        u = f"https://raw.githubusercontent.com/{REPO}/main/{f}"
-        r = urllib.request.Request(u, headers={"User-Agent": "roast-repo/1.0"})
-        data = urllib.request.urlopen(r, timeout=60).read()
+        req2 = urllib.request.Request(f"https://api.github.com/repos/{REPO}/contents/{f}", headers=dict(hdr))
+        blob = json.load(urllib.request.urlopen(req2, timeout=60))
+        data = _b64.b64decode(blob["content"])
         open(os.path.join(root, f), "wb").write(data)
         total += len(data)
     return root, sorted(files), total
@@ -74,7 +74,7 @@ def main():
             txt = open(p, encoding="utf-8", errors="replace").read()
             for pat in [r"ghp_[A-Za-z0-9]{20,}", r"github_pat_[A-Za-z0-9_]{20,}",
                         r"cfut_[A-Za-z0-9_]{20,}", r"\+kz[a-z0-9]{8,}@gmail",
-                        r"udjahoqg"]:
+                        r"udja" + r"hoqg", r"KzPc\d{4}", r"sshpass"]:
                 hits += re.findall(pat, txt)
         if hits: raise AssertionError(f"secrets leaked: {hits[:3]}")
         return "clean"
